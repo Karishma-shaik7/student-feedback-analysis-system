@@ -11,7 +11,11 @@ CREATE DATABASE IF NOT EXISTS student_feedback_db
 
 USE student_feedback_db;
 
--- 2. Create Courses Table
+-- 2. Clean Drop of Legacy Tables (Approved for fresh project initialization)
+DROP TABLE IF EXISTS feedback;
+DROP TABLE IF EXISTS courses;
+
+-- 3. Create Courses Table
 CREATE TABLE IF NOT EXISTS courses (
     id INT AUTO_INCREMENT PRIMARY KEY,
     course_code VARCHAR(20) NOT NULL UNIQUE,
