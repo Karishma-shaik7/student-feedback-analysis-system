@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block title %}Submit Course Feedback - EduPulse{% endblock %}
+{% block topbar_title %}Student Feedback Submission{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="form-hero">
+    <div class="form-hero-text">
+        <h1>Share Your Academic Experience</h1>
+        <p>Your honest ratings and constructive feedback help instructors enhance course materials, improve teaching techniques, and refine curriculum standards.</p>
+    </div>
+    <div>
+        <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">
+            <span>📊 View Live Dashboard</span>
+        </a>
+    </div>
+</section>
+
+<!-- Database Connection Warning if Offline -->
+{% if not db_healthy %}
+<div class="alert alert-danger" style="margin-bottom: 24px;">
+    <div>
+        <strong>⚠️ Database Not Connected:</strong>
+        {{ db_message }}
+        <p style="font-size: 0.85rem; margin-top: 6px; opacity: 0.9;">
+            Please ensure MySQL is running on port 3306 and that credentials in <code>.env</code> are valid.
+        </p>
+    </div>
+</div>
+{% endif %}
+
+<!-- Feedback Form Card -->
+<div class="form-card">
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">
+                <span>📝 Course Evaluation Form</span>
+            </h2>
+            <span class="table-badge">All courses active</span>
+        </div>
+
+        <div class="card-body">
+            <form id="feedback-form" action="{{ url_for('submit_feedback') }}" method="POST" class="feedback-form" novalidate>
+                
+                <!-- Course Selector -->
+                <div class="form-group">
+                    <label for="course_id" class="form-label">
+                        <span>Select Course</span>
+                        <span class="required-badge">*</span>
+                    </label>
+                    <select id="course_id" name="course_id" class="form-control" required {% if not courses %}disabled{% endif %}>
+                        <option value="" disabled selected>-- Choose an enrolled course --</option>
+                        {% for course in courses %}
+                            <option value="{{ course.id }}">
+                                {{ course.course_code }} — {{ course.course_name }} ({{ course.instructor_name }})
+                            </option>
+                        {% else %}
+                            <option value="" disabled>No active courses found in database</option>
+                        {% endfor %}
+                    </select>
+                    <div class="form-help">
+                        <span>Select the specific course code you wish to evaluate.</span>
+                        {% if courses %}
+                            <span>{{ courses|length }} courses available</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Star Rating Control -->
+                <div class="form-group">
+                    <label class="form-label">
+                        <span>Satisfaction Rating</span>
+                        <span class="required-badge">*</span>
+                    </label>
+
+                    <div class="star-rating-container" role="radiogroup" aria-label="Course Satisfaction Rating 1 to 5 Stars">
+                        <div class="stars-wrapper">
+                            <!-- Radios in reverse order for CSS sibling hover trick -->
+                            <input type="radio" id="star-5" name="rating" value="5" class="star-radio-input" required>
+                            <label for="star-5" class="star-label" data-value="5" title="5 Stars - Excellent">★</label>
+
+                            <input type="radio" id="star-4" name="rating" value="4" class="star-radio-input">
+                            <label for="star-4" class="star-label" data-value="4" title="4 Stars - Very Good">★</label>
+
+                            <input type="radio" id="star-3" name="rating" value="3" class="star-radio-input">
+                            <label for="star-3" class="star-label" data-value="3" title="3 Stars - Good">★</label>
+
+                            <input type="radio" id="star-2" name="rating" value="2" class="star-radio-input">
+                            <label for="star-2" class="star-label" data-value="2" title="2 Stars - Fair">★</label>
+
+                            <input type="radio" id="star-1" name="rating" value="1" class="star-radio-input">
+                            <label for="star-1" class="star-label" data-value="1" title="1 Star - Poor">★</label>
+                        </div>
+
+                        <div id="rating-descriptor" class="rating-descriptor" aria-live="polite">
+                            Select your rating (1 to 5 stars)
+                        </div>
+                    </div>
+                    <div class="form-help">
+                        <span>1 indicates poor satisfaction, 5 indicates outstanding excellence.</span>
+                    </div>
+                </div>
+
+                <!-- Written Comment -->
+                <div class="form-group">
+                    <label for="comment" class="form-label">
+                        <span>Detailed Comments & Suggestions</span>
+                        <span style="color: var(--text-muted); font-weight: normal; font-size: 0.85rem;">(Optional)</span>
+                    </label>
+                    <textarea 
+                        id="comment" 
+                        name="comment" 
+                        class="form-control" 
+                        rows="4" 
+                        maxlength="2000" 
+                        placeholder="What aspects of the course were most beneficial? What areas could be improved (e.g. pace, clarity, assignments)?"></textarea>
+                    <div class="form-help">
+                        <span>Keep comments respectful, constructive, and relevant.</span>
+                        <span id="comment-counter">0 / 2000 characters</span>
+                    </div>
+                </div>
+
+                <!-- Optional Student Name -->
+                <div class="form-group">
+                    <label for="student_name" class="form-label">
+                        <span>Student Name or Identifier</span>
+                        <span style="color: var(--text-muted); font-weight: normal; font-size: 0.85rem;">(Optional — leave blank for anonymous)</span>
+                    </label>
+                    <input 
+                        type="text" 
+                        id="student_name" 
+                        name="student_name" 
+                        class="form-control" 
+                        maxlength="100" 
+                        placeholder="e.g. Alex Johnson or Anonymous">
+                </div>
+
+                <!-- Submit Button -->
+                <div style="margin-top: 12px; display: flex; align-items: center; justify-content: flex-end; gap: 16px;">
+                    <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">
+                        Cancel
+                    </a>
+                    <button type="submit" id="submit-btn" class="btn btn-primary" {% if not courses %}disabled{% endif %}>
+                        <span>Submit Feedback</span>
+                        <span>→</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

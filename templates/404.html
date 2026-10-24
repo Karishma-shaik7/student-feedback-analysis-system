@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Page Not Found (404) - EduPulse{% endblock %}
+{% block topbar_title %}404 - Page Not Found{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 650px; margin: 40px auto; text-align: center; padding: 40px 24px;">
+    <div style="font-size: 4rem; margin-bottom: 12px;">🧭</div>
+    <h2 style="font-size: 1.8rem; margin-bottom: 12px; color: var(--text-primary);">Resource Not Found</h2>
+    <p style="color: var(--text-secondary); margin-bottom: 24px; font-size: 1rem;">
+        The page or URL you are attempting to access does not exist or may have been moved.
+    </p>
+    <div style="display: flex; justify-content: center; gap: 14px;">
+        <a href="{{ url_for('index') }}" class="btn btn-primary">
+            ✍️ Feedback Form
+        </a>
+        <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">
+            📊 View Dashboard
+        </a>
+    </div>
+</div>
+{% endblock %}

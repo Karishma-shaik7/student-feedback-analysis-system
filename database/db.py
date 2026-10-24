@@ -1,0 +1,297 @@
+"""
+Database Management Module for Student Feedback Analysis System.
+
+Provides robust, parameterized connection handling, transaction management,
+connection testing, schema initialization, and CRUD operations using mysql-connector-python.
+All credentials are loaded securely from config.py / environment variables.
+"""
+
+import logging
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Any, Optional, Tuple, List, Dict
+import mysql.connector
+from mysql.connector import Error, errorcode
+
+from config import get_config
+
+logger = logging.getLogger("student_feedback.db")
+
+
+def get_db_connection(database_override: Optional[str] = None, use_database: bool = True):
+    """
+    Creates and returns a new MySQL database connection using parameterized config.
+    
+    Args:
+        database_override: Optional database name to override config.
+        use_database: If False, connects to MySQL server without selecting a database
+                      (useful for CREATE DATABASE commands).
+    """
+    config_cls = get_config()
+    db_config = config_cls.get_mysql_config()
+
+    connection_params = {
+        "host": db_config["host"],
+        "port": db_config["port"],
+        "user": db_config["user"],
+        "password": db_config["password"],
+        "charset": db_config.get("charset", "utf8mb4"),
+        "autocommit": False,
+        "connect_timeout": 5,
+    }
+
+    if use_database:
+        connection_params["database"] = database_override or db_config["database"]
+
+    try:
+        conn = mysql.connector.connect(**connection_params)
+        return conn
+    except Error as err:
+        # Diagnostic logging for developers without exposing passwords
+        if err.errno == errorcode.ER_ACCESS_DENIED_ERROR:
+            logger.error("Database connection error: Invalid username or password for host '%s'", db_config['host'])
+        elif err.errno == errorcode.ER_BAD_DB_ERROR:
+            logger.error("Database connection error: Database '%s' does not exist", db_config['database'])
+        else:
+            logger.error("Database connection error [%d]: %s", err.errno, err.msg)
+        raise
+
+
+@contextmanager
+def get_db_cursor(commit: bool = False, dictionary: bool = True):
+    """
+    Context manager that yields a cursor and connection with automated transaction handling.
+    
+    If commit=True, commits on clean block completion.
+    Rolls back automatically upon any encountered exception.
+    Always closes both cursor and connection cleanly.
+    """
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=dictionary)
+        yield cursor, conn
+        if commit:
+            conn.commit()
+    except Exception as exc:
+        if conn and conn.is_connected():
+            try:
+                conn.rollback()
+                logger.warning("Database transaction rolled back due to error: %s", exc)
+            except Error as rollback_err:
+                logger.error("Failed to rollback transaction: %s", rollback_err)
+        raise
+    finally:
+        if cursor is not None:
+            try:
+                cursor.close()
+            except Exception:
+                pass
+        if conn is not None and conn.is_connected():
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def check_db_connection() -> Tuple[bool, str]:
+    """
+    Verifies that the database server is reachable and credentials are valid.
+    
+    Returns:
+        Tuple[bool, str]: (is_healthy, status_message)
+    """
+    try:
+        with get_db_cursor(commit=False) as (cursor, _):
+            cursor.execute("SELECT 1 AS health_check;")
+            row = cursor.fetchone()
+            if row and (row.get("health_check") == 1 or row[0] == 1):
+                return True, "Database connection active and responsive."
+            return False, "Unexpected response from database health query."
+    except Error as err:
+        if err.errno == errorcode.ER_ACCESS_DENIED_ERROR:
+            return False, "Access denied: Please verify MYSQL_USER and MYSQL_PASSWORD in your .env file."
+        elif err.errno == errorcode.ER_BAD_DB_ERROR:
+            return False, "Database not found: Run schema.sql or initialize via database setup."
+        elif err.errno == 2003:  # Can't connect to MySQL server
+            return False, "Cannot reach MySQL server: Please ensure MySQL80 service is running."
+        return False, f"Database connection issue: {err.msg}"
+    except Exception as exc:
+        return False, f"Database error: {str(exc)}"
+
+
+def init_db(schema_file_path: Optional[str] = None) -> Tuple[bool, str]:
+    """
+    Executes the DDL statements in schema.sql to ensure student_feedback_db,
+    courses, and feedback tables exist with initial seed courses.
+    """
+    if schema_file_path is None:
+        schema_file_path = Path(__file__).resolve().parent / "schema.sql"
+    else:
+        schema_file_path = Path(schema_file_path)
+
+    if not schema_file_path.exists():
+        return False, f"Schema file not found at {schema_file_path}"
+
+    with open(schema_file_path, "r", encoding="utf-8") as f:
+        sql_script = f.read()
+
+    # Split SQL commands by semicolon, ignoring empty statements and comments
+    statements = []
+    for raw_stmt in sql_script.split(";"):
+        stmt = raw_stmt.strip()
+        if stmt:
+            statements.append(stmt)
+
+    conn = None
+    cursor = None
+    try:
+        # First connect without selecting a database so CREATE DATABASE works
+        conn = get_db_connection(use_database=False)
+        cursor = conn.cursor()
+        for statement in statements:
+            # Skip pure comment blocks
+            lines = [line.strip() for line in statement.splitlines() if line.strip() and not line.strip().startswith("--")]
+            if lines:
+                cursor.execute(statement)
+        conn.commit()
+        return True, "Database schema initialized and seed courses verified successfully."
+    except Error as err:
+        if conn and conn.is_connected():
+            conn.rollback()
+        logger.error("Error executing database schema: %s", err)
+        return False, f"Failed to initialize schema: {err.msg}"
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if conn is not None and conn.is_connected():
+            conn.close()
+
+
+def get_all_courses() -> List[Dict[str, Any]]:
+    """
+    Fetches all active courses sorted by course code.
+    Uses parameterized query.
+    """
+    query = """
+        SELECT id, course_code, course_name, instructor_name, department, created_at
+        FROM courses
+        ORDER BY course_code ASC;
+    """
+    try:
+        with get_db_cursor(commit=False, dictionary=True) as (cursor, _):
+            cursor.execute(query)
+            return cursor.fetchall() or []
+    except Exception as err:
+        logger.error("Failed to fetch courses: %s", err)
+        return []
+
+
+def get_course_by_id(course_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Fetches a single course by its primary key ID.
+    Uses parameterized query to prevent injection.
+    """
+    query = """
+        SELECT id, course_code, course_name, instructor_name, department
+        FROM courses
+        WHERE id = %s;
+    """
+    try:
+        with get_db_cursor(commit=False, dictionary=True) as (cursor, _):
+            cursor.execute(query, (course_id,))
+            return cursor.fetchone()
+    except Exception as err:
+        logger.error("Failed to fetch course ID %s: %s", course_id, err)
+        return None
+
+
+def insert_feedback(course_id: int, rating: int, comment: Optional[str] = None, student_name: Optional[str] = None) -> Tuple[bool, Any]:
+    """
+    Inserts a feedback record into the feedback table using explicit transactions.
+    
+    Validations:
+        - Course must exist in courses table.
+        - Rating must be integer between 1 and 5.
+        - Comment sanitized and length bounded.
+    
+    Returns:
+        Tuple[bool, Any]: (True, new_id) if successful, (False, error_message) on failure.
+    """
+    # Server-side validation
+    try:
+        rating_int = int(rating)
+        if rating_int < 1 or rating_int > 5:
+            return False, "Rating must be an integer between 1 and 5."
+    except (ValueError, TypeError):
+        return False, "Invalid rating value. Must be an integer between 1 and 5."
+
+    try:
+        course_id_int = int(course_id)
+    except (ValueError, TypeError):
+        return False, "Invalid course selection."
+
+    # Verify course existence
+    course = get_course_by_id(course_id_int)
+    if not course:
+        return False, f"Course with ID {course_id_int} does not exist."
+
+    # Clean comment & student_name
+    clean_comment = comment.strip() if comment and isinstance(comment, str) else None
+    if clean_comment and len(clean_comment) > 2000:
+        clean_comment = clean_comment[:2000]
+
+    clean_name = student_name.strip() if student_name and isinstance(student_name, str) else None
+    if clean_name and len(clean_name) > 100:
+        clean_name = clean_name[:100]
+
+    insert_sql = """
+        INSERT INTO feedback (course_id, rating, comment, student_name)
+        VALUES (%s, %s, %s, %s);
+    """
+
+    try:
+        with get_db_cursor(commit=True, dictionary=True) as (cursor, conn):
+            cursor.execute(insert_sql, (course_id_int, rating_int, clean_comment, clean_name))
+            new_id = cursor.lastrowid
+            logger.info("Successfully inserted feedback ID %s for course ID %s with rating %s", new_id, course_id_int, rating_int)
+            return True, new_id
+    except Error as db_err:
+        logger.error("Database insert failed for course %s: %s", course_id_int, db_err)
+        return False, f"Database error while saving feedback: {db_err.msg}"
+    except Exception as exc:
+        logger.error("Unexpected error saving feedback: %s", exc)
+        return False, "A system error occurred while recording your feedback. Please try again."
+
+
+def get_all_feedback_joined(limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    """
+    Fetches feedback records joined with course details for analysis and display.
+    """
+    base_sql = """
+        SELECT 
+            f.id,
+            f.course_id,
+            c.course_code,
+            c.course_name,
+            c.instructor_name,
+            c.department,
+            f.rating,
+            f.comment,
+            f.student_name,
+            f.created_at
+        FROM feedback f
+        JOIN courses c ON f.course_id = c.id
+        ORDER BY f.created_at DESC
+    """
+    if limit and isinstance(limit, int) and limit > 0:
+        base_sql += f" LIMIT {limit}"
+
+    try:
+        with get_db_cursor(commit=False, dictionary=True) as (cursor, _):
+            cursor.execute(base_sql)
+            return cursor.fetchall() or []
+    except Exception as err:
+        logger.error("Failed to fetch joined feedback: %s", err)
+        return []

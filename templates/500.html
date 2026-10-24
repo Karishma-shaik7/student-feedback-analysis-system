@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Server Error (500) - EduPulse{% endblock %}
+{% block topbar_title %}500 - Internal Server Error{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 650px; margin: 40px auto; text-align: center; padding: 40px 24px;">
+    <div style="font-size: 4rem; margin-bottom: 12px;">⚙️</div>
+    <h2 style="font-size: 1.8rem; margin-bottom: 12px; color: var(--text-primary);">System Encountered An Issue</h2>
+    <p style="color: var(--text-secondary); margin-bottom: 24px; font-size: 1rem;">
+        An unexpected server error occurred while processing your request. The technical diagnostics have been logged safely to the terminal.
+    </p>
+    <div style="display: flex; justify-content: center; gap: 14px;">
+        <a href="{{ url_for('index') }}" class="btn btn-primary">
+            Back to Feedback Form
+        </a>
+        <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">
+            Go to Dashboard
+        </a>
+    </div>
+</div>
+{% endblock %}

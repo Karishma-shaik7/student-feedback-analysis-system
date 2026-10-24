@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+
+{% block title %}Analytics Dashboard - EduPulse{% endblock %}
+{% block topbar_title %}Executive Analytics Dashboard{% endblock %}
+
+{% block topbar_actions %}
+<div style="display: flex; align-items: center; gap: 12px;">
+    <a href="{{ url_for('dashboard') }}" class="btn btn-secondary" style="padding: 8px 16px; font-size: 0.85rem;" title="Refresh Data & Charts">
+        🔄 Refresh Data
+    </a>
+    <a href="{{ url_for('index') }}" class="btn btn-primary" style="padding: 8px 18px; font-size: 0.85rem;">
+        ✍️ Submit New Feedback
+    </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Database Warning Banner -->
+{% if not db_healthy %}
+<div class="alert alert-danger" style="margin-bottom: 24px;">
+    <div>
+        <strong>⚠️ Database Connection Warning:</strong> {{ db_message }}
+        <p style="font-size: 0.85rem; margin-top: 6px; opacity: 0.9;">
+            Live analytics could not be retrieved from MySQL. Check database service status.
+        </p>
+    </div>
+</div>
+{% endif %}
+
+<!-- KPI Summary Cards -->
+<section class="kpi-grid" aria-label="Key Performance Indicators">
+    <!-- Card 1: Total Responses -->
+    <div class="kpi-card">
+        <div class="kpi-icon-wrapper">
+            <span>📋</span>
+        </div>
+        <div class="kpi-content">
+            <span class="kpi-label">Total Responses</span>
+            <span class="kpi-value">{{ metrics.total_responses }}</span>
+            <span class="kpi-subtitle">
+                {% if metrics.total_responses == 1 %}
+                    1 verified review
+                {% else %}
+                    {{ metrics.total_responses }} verified reviews
+                {% endif %}
+            </span>
+        </div>
+    </div>
+
+    <!-- Card 2: Overall Average Rating -->
+    <div class="kpi-card">
+        <div class="kpi-icon-wrapper" style="color: var(--star-gold); background: rgba(251, 191, 36, 0.15); border-color: rgba(251, 191, 36, 0.3);">
+            <span>⭐</span>
+        </div>
+        <div class="kpi-content">
+            <span class="kpi-label">Average Satisfaction</span>
+            <div style="display: flex; align-items: baseline; gap: 8px;">
+                <span class="kpi-value">{{ metrics.overall_avg_display }}</span>
+                <span style="color: var(--text-muted); font-size: 1rem; font-weight: 500;">/ 5.0</span>
+            </div>
+            <span class="kpi-subtitle" style="color: var(--star-gold);">
+                {{ metrics.overall_avg_rating|star_rating }}
+            </span>
+        </div>
+    </div>
+
+    <!-- Card 3: Total Active Courses -->
+    <div class="kpi-card">
+        <div class="kpi-icon-wrapper" style="color: var(--accent-cyan); background: rgba(6, 182, 212, 0.15); border-color: rgba(6, 182, 212, 0.3);">
+            <span>📚</span>
+        </div>
+        <div class="kpi-content">
+            <span class="kpi-label">Active Courses</span>
+            <span class="kpi-value">{{ metrics.total_courses }}</span>
+            <span class="kpi-subtitle">In current academic catalog</span>
+        </div>
+    </div>
+
+    <!-- Card 4: Top Rated Course -->
+    <div class="kpi-card">
+        <div class="kpi-icon-wrapper" style="color: #34d399; background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.3);">
+            <span>🏆</span>
+        </div>
+        <div class="kpi-content">
+            <span class="kpi-label">Top Rated Course</span>
+            {% if metrics.highest_rated_course %}
+                <span class="kpi-value" style="font-size: 1.45rem;">
+                    {{ metrics.highest_rated_course.course_code }}
+                </span>
+                <span class="kpi-subtitle" style="color: #34d399;">
+                    {{ metrics.highest_rated_course.avg_display }} ★ ({{ metrics.highest_rated_course.response_count }} reviews)
+                </span>
+            {% else %}
+                <span class="kpi-value" style="font-size: 1.25rem; color: var(--text-muted);">
+                    N/A
+                </span>
+                <span class="kpi-subtitle">Awaiting initial reviews</span>
+            {% endif %}
+        </div>
+    </div>
+</section>
+
+{% if not metrics.has_data %}
+<!-- Empty State Component -->
+<div class="card" style="margin-bottom: 32px;">
+    <div class="empty-state">
+        <div class="empty-state-icon">📊</div>
+        <h2 class="empty-state-title">No Feedback Submissions Yet</h2>
+        <p class="empty-state-desc">
+            All database tables and course records are initialized. Once students submit course evaluations,
+            Matplotlib analytics, rating distributions, and average satisfaction scores will generate automatically here in real time.
+        </p>
+        <div style="margin-top: 12px;">
+            <a href="{{ url_for('index') }}" class="btn btn-primary">
+                <span>✍️ Submit First Evaluation</span>
+            </a>
+        </div>
+    </div>
+</div>
+{% else %}
+
+<!-- Visualizations Grid (3 Matplotlib Charts) -->
+<section class="charts-grid" aria-label="Visual Analytics Charts">
+    
+    <!-- Chart 1: Average Rating by Course -->
+    <div class="card chart-card">
+        <div class="card-header">
+            <h2 class="card-title">
+                <span>📈 Course Satisfaction Comparison</span>
+            </h2>
+            <span class="table-badge">Mean Score</span>
+        </div>
+        <div class="card-body">
+            <div class="chart-wrapper">
+                {% if charts.avg_rating_chart %}
+                    <img src="{{ charts.avg_rating_chart }}" alt="Bar chart displaying average satisfaction rating per course" class="chart-image">
+                {% else %}
+                    <p style="color: var(--text-muted);">No score data available</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Chart 2: Rating Distribution -->
+    <div class="card chart-card">
+        <div class="card-header">
+            <h2 class="card-title">
+                <span>⭐ Rating Star Distribution</span>
+            </h2>
+            <span class="table-badge">1 - 5 Stars</span>
+        </div>
+        <div class="card-body">
+            <div class="chart-wrapper">
+                {% if charts.rating_dist_chart %}
+                    <img src="{{ charts.rating_dist_chart }}" alt="Bar chart showing distribution of 1 to 5 star student ratings" class="chart-image">
+                {% else %}
+                    <p style="color: var(--text-muted);">No distribution data available</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Chart 3: Response Volume per Course -->
+    <div class="card chart-card" style="grid-column: 1 / -1;">
+        <div class="card-header">
+            <h2 class="card-title">
+                <span>📊 Feedback Volume by Course</span>
+            </h2>
+            <span class="table-badge">Response Counts</span>
+        </div>
+        <div class="card-body">
+            <div class="chart-wrapper">
+                {% if charts.responses_chart %}
+                    <img src="{{ charts.responses_chart }}" alt="Bar chart showing total response volume per course" class="chart-image">
+                {% else %}
+                    <p style="color: var(--text-muted);">No volume data available</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+</section>
+
+<!-- Recent Feedback Responses Table -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">
+            <span>💬 Recent Student Feedback</span>
+        </h2>
+        <span class="table-badge">{{ metrics.recent_feedback|length }} most recent</span>
+    </div>
+
+    <div class="card-body" style="padding: 0;">
+        <div class="table-responsive">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Course</th>
+                        <th>Instructor</th>
+                        <th>Rating</th>
+                        <th>Comment / Feedback</th>
+                        <th>Submitted By</th>
+                        <th>Timestamp</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in metrics.recent_feedback %}
+                        <tr>
+                            <td>
+                                <strong style="color: var(--text-primary);">{{ item.course_code }}</strong>
+                                <div style="font-size: 0.8rem; color: var(--text-muted);">{{ item.course_name }}</div>
+                            </td>
+                            <td>{{ item.instructor_name }}</td>
+                            <td>
+                                <div class="star-rating-cell" title="{{ item.rating }} Stars">
+                                    {{ item.rating|star_rating }}
+                                    <span style="font-size: 0.85rem; color: var(--text-secondary); margin-left: 4px;">({{ item.rating }})</span>
+                                </div>
+                            </td>
+                            <td class="comment-cell">
+                                {% if item.comment %}
+                                    "{{ item.comment }}"
+                                {% else %}
+                                    <span style="color: var(--text-muted); font-style: normal;">(No written comment provided)</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if item.student_name %}
+                                    <span style="color: var(--text-secondary);">{{ item.student_name }}</span>
+                                {% else %}
+                                    <span style="color: var(--text-muted); font-style: italic;">Anonymous</span>
+                                {% endif %}
+                            </td>
+                            <td style="white-space: nowrap; font-size: 0.85rem; color: var(--text-muted);">
+                                {{ item.created_at|format_datetime }}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% endif %}
+
+{% endblock %}

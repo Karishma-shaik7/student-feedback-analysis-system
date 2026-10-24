@@ -1,0 +1,35 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Environment files and credentials
+.env
+.env.local
+.env.*.local
+
+# Operating System & IDE files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Testing and reports
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# Dynamic chart generation directory (keep structure, ignore generated charts)
+static/images/charts/*.png
+!static/images/charts/.gitkeep

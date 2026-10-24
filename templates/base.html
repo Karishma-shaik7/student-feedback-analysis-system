@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Student Feedback Analysis System{% endblock %}</title>
+    <!-- Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎓</text></svg>">
+    <!-- Main Design System CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block head_extra %}{% endblock %}
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Sidebar Navigation -->
+        <aside class="app-sidebar" aria-label="Main Navigation">
+            <a href="{{ url_for('index') }}" class="sidebar-brand">
+                <div class="brand-icon">🎓</div>
+                <div class="brand-text">
+                    <span class="brand-title">EduPulse</span>
+                    <span class="brand-subtitle">Feedback & Analytics</span>
+                </div>
+            </a>
+
+            <nav class="sidebar-nav">
+                <a href="{{ url_for('index') }}" class="nav-link {% if request.endpoint == 'index' %}active{% endif %}">
+                    <span class="nav-icon">✍️</span>
+                    <span>Submit Feedback</span>
+                </a>
+                <a href="{{ url_for('dashboard') }}" class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}">
+                    <span class="nav-icon">📊</span>
+                    <span>Analytics Dashboard</span>
+                </a>
+            </nav>
+
+            <div class="sidebar-footer">
+                <span>Database:</span>
+                {% if db_healthy %}
+                    <span class="status-badge online" title="MySQL Connected">
+                        <span class="status-dot"></span> Online
+                    </span>
+                {% else %}
+                    <span class="status-badge offline" title="{{ db_message }}">
+                        <span class="status-dot"></span> Offline
+                    </span>
+                {% endif %}
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <div class="app-main">
+            <header class="app-topbar">
+                <div style="display: flex; align-items: center; gap: 14px;">
+                    <button id="mobile-toggle" class="mobile-toggle" aria-label="Toggle Navigation Menu">☰</button>
+                    <h1 class="topbar-title">{% block topbar_title %}Student Feedback Portal{% endblock %}</h1>
+                </div>
+                <div class="topbar-actions">
+                    {% block topbar_actions %}
+                        {% if request.endpoint == 'index' %}
+                            <a href="{{ url_for('dashboard') }}" class="btn btn-secondary" style="padding: 8px 16px; font-size: 0.85rem;">
+                                📊 View Analytics
+                            </a>
+                        {% else %}
+                            <a href="{{ url_for('index') }}" class="btn btn-secondary" style="padding: 8px 16px; font-size: 0.85rem;">
+                                ✍️ Submit Feedback
+                            </a>
+                        {% endif %}
+                    {% endblock %}
+                </div>
+            </header>
+
+            <main class="content-container">
+                <!-- Flash Messages Banner Container -->
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        <div class="flash-container" role="alert">
+                            {% for category, message in messages %}
+                                <div class="alert alert-{{ category }}">
+                                    <span>
+                                        {% if category == 'success' %}
+                                            ✅
+                                        {% elif category == 'danger' %}
+                                            ❌
+                                        {% else %}
+                                            ℹ️
+                                        {% endif %}
+                                        {{ message }}
+                                    </span>
+                                    <button type="button" class="alert-close" aria-label="Close message">&times;</button>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                {% endwith %}
+
+                <!-- Main Child Template Content -->
+                {% block content %}{% endblock %}
+            </main>
+        </div>
+    </div>
+
+    <!-- Frontend Interactive Logic -->
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    {% block scripts_extra %}{% endblock %}
+</body>
+</html>
