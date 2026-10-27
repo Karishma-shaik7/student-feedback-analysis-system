@@ -23,6 +23,9 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+~$*.pptx
+~$*.docx
+~$*.xlsx
 
 # Testing and reports
 .pytest_cache/
