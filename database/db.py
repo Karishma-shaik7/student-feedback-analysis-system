@@ -21,7 +21,11 @@ logger = logging.getLogger("student_feedback.db")
 def get_db_connection(database_override: Optional[str] = None, use_database: bool = True):
     """
     Creates and returns a new MySQL database connection using parameterized config.
-    
+
+    All connection parameters — including SSL settings — are taken directly from
+    config.get_mysql_config(), so credentials and certificate paths are never
+    hardcoded here.
+
     Args:
         database_override: Optional database name to override config.
         use_database: If False, connects to MySQL server without selecting a database
@@ -30,18 +34,16 @@ def get_db_connection(database_override: Optional[str] = None, use_database: boo
     config_cls = get_config()
     db_config = config_cls.get_mysql_config()
 
-    connection_params = {
-        "host": db_config["host"],
-        "port": db_config["port"],
-        "user": db_config["user"],
-        "password": db_config["password"],
-        "charset": db_config.get("charset", "utf8mb4"),
-        "autocommit": False,
-        "connect_timeout": 5,
-    }
+    # Start from the full config dict returned by get_mysql_config().
+    # This already contains all SSL keys when they are configured.
+    connection_params = dict(db_config)
+    connection_params["connect_timeout"] = 10
 
     if use_database:
-        connection_params["database"] = database_override or db_config["database"]
+        connection_params["database"] = database_override or db_config.get("database")
+    else:
+        # Remove the database key so we can connect at server level
+        connection_params.pop("database", None)
 
     try:
         conn = mysql.connector.connect(**connection_params)
@@ -51,7 +53,7 @@ def get_db_connection(database_override: Optional[str] = None, use_database: boo
         if err.errno == errorcode.ER_ACCESS_DENIED_ERROR:
             logger.error("Database connection error: Invalid username or password for host '%s'", db_config['host'])
         elif err.errno == errorcode.ER_BAD_DB_ERROR:
-            logger.error("Database connection error: Database '%s' does not exist", db_config['database'])
+            logger.error("Database connection error: Database '%s' does not exist", db_config.get('database', ''))
         else:
             logger.error("Database connection error [%d]: %s", err.errno, err.msg)
         raise

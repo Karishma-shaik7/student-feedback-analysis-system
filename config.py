@@ -3,6 +3,14 @@ Centralized Configuration Module for Student Feedback Analysis System.
 
 Handles environment variable loading, validation, and database connection settings.
 Never hardcodes sensitive credentials into source code.
+
+SSL/TLS Environment Variables (for Aiven and other cloud MySQL providers):
+    MYSQL_SSL_DISABLED  - Set to "true" to disable SSL (local dev only).
+    MYSQL_SSL_CA        - Absolute path to the CA certificate file (e.g. ca.pem from Aiven).
+    MYSQL_SSL_CERT      - Absolute path to the client certificate file (optional).
+    MYSQL_SSL_KEY       - Absolute path to the client key file (optional).
+    MYSQL_SSL_VERIFY_CERT     - "true" to verify the server certificate against MYSQL_SSL_CA.
+    MYSQL_SSL_VERIFY_IDENTITY - "true" to also verify the server hostname matches the cert.
 """
 
 import os
@@ -42,21 +50,61 @@ class BaseConfig:
     MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
     MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "student_feedback_db")
 
+    # SSL/TLS settings — read from environment variables only.
+    # For local development with localhost MySQL, leave MYSQL_SSL_DISABLED=true (the default).
+    # For Aiven (production), set MYSQL_SSL_DISABLED=false and supply MYSQL_SSL_CA.
+    MYSQL_SSL_DISABLED = os.getenv("MYSQL_SSL_DISABLED", "true").lower() in ("1", "true", "yes")
+    MYSQL_SSL_CA = os.getenv("MYSQL_SSL_CA", None)         # Path to CA certificate (ca.pem)
+    MYSQL_SSL_CERT = os.getenv("MYSQL_SSL_CERT", None)     # Path to client cert (optional)
+    MYSQL_SSL_KEY = os.getenv("MYSQL_SSL_KEY", None)       # Path to client key  (optional)
+    # ssl_verify_cert: validate server cert against the CA. Requires MYSQL_SSL_CA.
+    MYSQL_SSL_VERIFY_CERT = os.getenv("MYSQL_SSL_VERIFY_CERT", "false").lower() in ("1", "true", "yes")
+    # ssl_verify_identity: also check the server hostname matches the cert CN/SAN.
+    MYSQL_SSL_VERIFY_IDENTITY = os.getenv("MYSQL_SSL_VERIFY_IDENTITY", "false").lower() in ("1", "true", "yes")
+
     # Matplotlib Chart Output Directory
     CHART_OUTPUT_DIR = BASE_DIR / "static" / "images" / "charts"
 
     @classmethod
     def get_mysql_config(cls) -> dict:
-        """Returns the dictionary needed for mysql.connector.connect()."""
-        return {
+        """
+        Returns the dictionary passed directly to mysql.connector.connect().
+
+        SSL behaviour:
+          - Local dev  (MYSQL_SSL_DISABLED=true, default):  ssl_disabled=True — no SSL.
+          - Aiven prod (MYSQL_SSL_DISABLED=false):           ssl_disabled=False, ssl_ca set,
+                                                             ssl_verify_cert / ssl_verify_identity
+                                                             enabled when their env vars are true.
+
+        All SSL parameter names match the keys in mysql.connector.pooling.DEFAULT_CONFIGURATION
+        for the installed connector version (26.7.0 / 8.x compatible).
+        """
+        config: dict = {
             "host": cls.MYSQL_HOST,
             "port": cls.MYSQL_PORT,
             "user": cls.MYSQL_USER,
             "password": cls.MYSQL_PASSWORD,
             "database": cls.MYSQL_DATABASE,
             "charset": "utf8mb4",
-            "autocommit": False,  # Explicit transaction commits & rollbacks
+            "autocommit": False,   # Explicit transaction commits & rollbacks
+            "ssl_disabled": cls.MYSQL_SSL_DISABLED,
         }
+
+        # Only attach SSL certificate paths when they are explicitly configured.
+        # Passing None for these parameters is safe — the connector ignores them.
+        if cls.MYSQL_SSL_CA:
+            config["ssl_ca"] = cls.MYSQL_SSL_CA
+        if cls.MYSQL_SSL_CERT:
+            config["ssl_cert"] = cls.MYSQL_SSL_CERT
+        if cls.MYSQL_SSL_KEY:
+            config["ssl_key"] = cls.MYSQL_SSL_KEY
+
+        # These are only meaningful when ssl_disabled=False and a CA cert is provided.
+        if not cls.MYSQL_SSL_DISABLED:
+            config["ssl_verify_cert"] = cls.MYSQL_SSL_VERIFY_CERT
+            config["ssl_verify_identity"] = cls.MYSQL_SSL_VERIFY_IDENTITY
+
+        return config
 
     @classmethod
     def get_safe_info(cls) -> dict:
@@ -68,6 +116,10 @@ class BaseConfig:
             "mysql_user": cls.MYSQL_USER,
             "mysql_database": cls.MYSQL_DATABASE,
             "mysql_password_configured": bool(cls.MYSQL_PASSWORD),
+            "mysql_ssl_disabled": cls.MYSQL_SSL_DISABLED,
+            "mysql_ssl_ca_configured": bool(cls.MYSQL_SSL_CA),
+            "mysql_ssl_verify_cert": cls.MYSQL_SSL_VERIFY_CERT,
+            "mysql_ssl_verify_identity": cls.MYSQL_SSL_VERIFY_IDENTITY,
             "secret_key_configured": cls.SECRET_KEY != cls._DEFAULT_DEV_SECRET,
         }
 
