@@ -45,6 +45,15 @@ def create_app(config_name: Optional[str] = None) -> Flask:
     config_cls = get_config(config_name)
     app.config.from_object(config_cls)
 
+    # Safely ensure database tables exist in the selected database on startup
+    if not app.config.get("TESTING"):
+        try:
+            is_healthy, _ = db_manager.check_db_connection()
+            if is_healthy:
+                db_manager.init_db()
+        except Exception as init_err:
+            logger.debug("Database auto-initialization deferred on startup: %s", init_err)
+
     # Register custom Jinja template filters
     @app.template_filter("format_datetime")
     def format_datetime(value, format_str="%b %d, %Y - %I:%M %p"):

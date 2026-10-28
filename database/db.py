@@ -123,11 +123,38 @@ def check_db_connection() -> Tuple[bool, str]:
         return False, f"Database error: {str(exc)}"
 
 
-def init_db(schema_file_path: Optional[str] = None) -> Tuple[bool, str]:
+def init_db(schema_file_path: Optional[str] = None, database_name: Optional[str] = None) -> Tuple[bool, str]:
     """
-    Executes the DDL statements in schema.sql to ensure student_feedback_db,
-    courses, and feedback tables exist with initial seed courses.
+    Safely creates the `courses` and `feedback` tables and inserts the sample
+    courses in the database specified by `database_name` or `MYSQL_DATABASE` (e.g. defaultdb).
+    
+    Guarantees:
+        - Creates tables in the database selected by MYSQL_DATABASE.
+        - Never drops tables or deletes existing feedback data.
+        - Uses duplicate-safe inserts (INSERT IGNORE) for sample courses.
+        - Preserves all SSL/TLS and connection configurations.
+        - Handles local MySQL environments by creating database if allowed/needed.
     """
+    config_cls = get_config()
+    target_db = database_name or config_cls.MYSQL_DATABASE
+
+    # For local dev environments, try to ensure the target database exists if possible.
+    # On managed cloud hosts (like Aiven), databases are pre-created (e.g. defaultdb)
+    # and server-level commands without a database may be restricted or unsupported.
+    try:
+        server_conn = get_db_connection(use_database=False)
+        try:
+            with server_conn.cursor() as s_cur:
+                s_cur.execute(
+                    f"CREATE DATABASE IF NOT EXISTS `{target_db}` "
+                    "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+                )
+            server_conn.commit()
+        finally:
+            server_conn.close()
+    except Exception as db_create_err:
+        logger.debug("Server-level database check skipped or restricted: %s", db_create_err)
+
     if schema_file_path is None:
         schema_file_path = Path(__file__).resolve().parent / "schema.sql"
     else:
@@ -143,14 +170,18 @@ def init_db(schema_file_path: Optional[str] = None) -> Tuple[bool, str]:
     statements = []
     for raw_stmt in sql_script.split(";"):
         stmt = raw_stmt.strip()
+        # Strictly filter out any destructive or database-switching statements for safety
+        upper_stmt = stmt.upper()
+        if upper_stmt.startswith("DROP ") or upper_stmt.startswith("USE ") or upper_stmt.startswith("CREATE DATABASE "):
+            continue
         if stmt:
             statements.append(stmt)
 
     conn = None
     cursor = None
     try:
-        # First connect without selecting a database so CREATE DATABASE works
-        conn = get_db_connection(use_database=False)
+        # Connect directly to the target database (e.g. defaultdb or student_feedback_db)
+        conn = get_db_connection(database_override=target_db, use_database=True)
         cursor = conn.cursor()
         for statement in statements:
             # Skip pure comment blocks
@@ -158,12 +189,12 @@ def init_db(schema_file_path: Optional[str] = None) -> Tuple[bool, str]:
             if lines:
                 cursor.execute(statement)
         conn.commit()
-        return True, "Database schema initialized and seed courses verified successfully."
+        return True, f"Database '{target_db}' schema initialized safely and seed courses verified."
     except Error as err:
         if conn and conn.is_connected():
             conn.rollback()
-        logger.error("Error executing database schema: %s", err)
-        return False, f"Failed to initialize schema: {err.msg}"
+        logger.error("Error executing database schema on '%s': %s", target_db, err)
+        return False, f"Failed to initialize schema on '{target_db}': {err.msg}"
     finally:
         if cursor is not None:
             cursor.close()
@@ -174,7 +205,7 @@ def init_db(schema_file_path: Optional[str] = None) -> Tuple[bool, str]:
 def get_all_courses() -> List[Dict[str, Any]]:
     """
     Fetches all active courses sorted by course code.
-    Uses parameterized query.
+    Uses parameterized query. If tables do not exist yet, auto-initializes once.
     """
     query = """
         SELECT id, course_code, course_name, instructor_name, department, created_at
@@ -185,6 +216,19 @@ def get_all_courses() -> List[Dict[str, Any]]:
         with get_db_cursor(commit=False, dictionary=True) as (cursor, _):
             cursor.execute(query)
             return cursor.fetchall() or []
+    except Error as err:
+        if err.errno == errorcode.ER_NO_SUCH_TABLE:
+            logger.info("Table 'courses' does not exist yet. Running safe initialization...")
+            init_ok, _ = init_db()
+            if init_ok:
+                try:
+                    with get_db_cursor(commit=False, dictionary=True) as (cursor, _):
+                        cursor.execute(query)
+                        return cursor.fetchall() or []
+                except Exception as retry_err:
+                    logger.error("Failed to fetch courses after initialization: %s", retry_err)
+        logger.error("Failed to fetch courses: %s", err)
+        return []
     except Exception as err:
         logger.error("Failed to fetch courses: %s", err)
         return []
@@ -294,6 +338,19 @@ def get_all_feedback_joined(limit: Optional[int] = None) -> List[Dict[str, Any]]
         with get_db_cursor(commit=False, dictionary=True) as (cursor, _):
             cursor.execute(base_sql)
             return cursor.fetchall() or []
+    except Error as err:
+        if err.errno == errorcode.ER_NO_SUCH_TABLE:
+            logger.info("Feedback or courses table does not exist yet. Running safe initialization...")
+            init_ok, _ = init_db()
+            if init_ok:
+                try:
+                    with get_db_cursor(commit=False, dictionary=True) as (cursor, _):
+                        cursor.execute(base_sql)
+                        return cursor.fetchall() or []
+                except Exception as retry_err:
+                    logger.error("Failed to fetch joined feedback after initialization: %s", retry_err)
+        logger.error("Failed to fetch joined feedback: %s", err)
+        return []
     except Exception as err:
         logger.error("Failed to fetch joined feedback: %s", err)
         return []

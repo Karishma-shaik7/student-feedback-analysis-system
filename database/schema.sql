@@ -1,21 +1,11 @@
 -- ==============================================================================
 -- DATABASE SCHEMA: Student Feedback Analysis System
--- Target Database: student_feedback_db
 -- Engine: InnoDB | Charset: utf8mb4 | Collation: utf8mb4_unicode_ci
+-- Safe for any target database selected by MYSQL_DATABASE (e.g. defaultdb)
+-- Non-destructive: Never drops tables or deletes existing feedback
 -- ==============================================================================
 
--- 1. Create Database if not exists
-CREATE DATABASE IF NOT EXISTS student_feedback_db
-    CHARACTER SET utf8mb4
-    COLLATE utf8mb4_unicode_ci;
-
-USE student_feedback_db;
-
--- 2. Clean Drop of Legacy Tables (Approved for fresh project initialization)
-DROP TABLE IF EXISTS feedback;
-DROP TABLE IF EXISTS courses;
-
--- 3. Create Courses Table
+-- 1. Create Courses Table (Safe: IF NOT EXISTS)
 CREATE TABLE IF NOT EXISTS courses (
     id INT AUTO_INCREMENT PRIMARY KEY,
     course_code VARCHAR(20) NOT NULL UNIQUE,
@@ -27,7 +17,7 @@ CREATE TABLE IF NOT EXISTS courses (
     INDEX idx_department (department)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 3. Create Feedback Table
+-- 2. Create Feedback Table (Safe: IF NOT EXISTS)
 CREATE TABLE IF NOT EXISTS feedback (
     id INT AUTO_INCREMENT PRIMARY KEY,
     course_id INT NOT NULL,
